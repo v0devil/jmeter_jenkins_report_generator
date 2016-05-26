@@ -6,8 +6,10 @@ import csv
 import sys
 import re
 import os
+import zipfile
 from distutils.dir_util import copy_tree
 from xml.etree.ElementTree import ElementTree
+from os.path import basename
 
 reload(sys)
 sys.setdefaultencoding('utf-8')
@@ -40,6 +42,14 @@ def get_dir_size(path):
 				total_size += os.path.getsize(fp)
 	return total_size
 
+def zip_results_file(file):
+	if os.path.exists(file+'.zip'):
+		os.remove(file+'.zip')
+	print "Move results file " + file + " to zip archive"
+	with zipfile.ZipFile(file + ".zip", "w", zipfile.ZIP_DEFLATED,allowZip64 = True) as zip_file:
+		zip_file.write(file, basename(file)) 
+	os.remove(file)
+	print "File was packed, original file was deleted"
 
 jtl_files = []
 releases = []
@@ -54,15 +64,18 @@ IMAGES_DIR = report_dir + "images/"
 build_xml = ElementTree()
 for root, dirs, files in os.walk(builds_dir):
 	for file in files:
-		if file.endswith(".jtl"):
+		if "jmeter.jtl" in file:
 			if os.stat(os.path.join(root, file)).st_size>0: 
 				build_parameters = []
 				displayName = "unknown"
 				monitoring_data =  os.path.join(root.replace('JMeterCSV','').replace('performance-reports',''), "monitoring.data")  
 				build_xml_path = os.path.join(root.replace('JMeterCSV','').replace('performance-reports',''), "build.xml")	   
+
+
 				if os.path.isfile(build_xml_path):				
 					build_xml.parse(build_xml_path)
 					build_tag = build_xml.getroot()
+
 				   
 					for params in build_tag:
 						if params.tag == 'actions':
@@ -70,17 +83,21 @@ for root, dirs, files in os.walk(builds_dir):
 							for parameter in parameters:
 								name = parameter.find('name')
 								value = parameter.find('value')
-								build_parameters.append([name.text,value.text])
-							print build_parameters
+								build_parameters.append([name.text,value.text])							
 						elif params.tag == 'displayName':
-							displayName = params.text							
+							displayName = params.text
+
+						
 				if "Performance_HTML_Report" not in os.path.join(root, file):									   
 					jtl_files.append([os.path.join(root, file),monitoring_data,displayName, build_parameters,root])
 
 			  
 jtl_files = sorted(jtl_files, key=getIndex,reverse=True)
 
+
 releases.sort();
+
+  
 dateconv = np.vectorize(datetime.datetime.fromtimestamp)
   
 
@@ -157,10 +174,6 @@ print "Trying to open CSV-files"
 build_roots = [jtl_files[i][4]  for i in xrange(0,len(jtl_files))]
 
 #dataframe to compare with:
-df_ = pd.read_csv(jtl_files[0][0],index_col=0)  
-df_.columns = ['average', 'URL','responseCode','success','threadName','failureMessage','grpThreads','allThreads']
-df_.index=pd.to_datetime(dateconv((df_.index.values/1000)))
-df_=df_[~df_['URL'].str.contains('exclude_')]
 		
 for build_root in build_roots:
 	print "Current build directory:" + build_root
@@ -178,16 +191,32 @@ for build_root in build_roots:
 	target_csv = PARSED_DATA_ROOT+"aggregate_table.csv"
 	print 'checksum:' +  str(checksum) + '; directory size: ' + str(get_dir_size(PARSED_DATA_ROOT))
 	if int(checksum)!=int(get_dir_size(PARSED_DATA_ROOT)) or checksum == -1:
-	#if True:
-		print "Executing a new parse... "
-		df = pd.read_csv(jtl_files[file_index][0],index_col=0)		   
-		
-		df.columns = ['average', 'URL','responseCode','success','threadName','failureMessage','grpThreads','allThreads']
-			#convert timestamps to normal date/time
-		df.index=pd.to_datetime(dateconv((df.index.values/1000)))
-		df=df[~df['URL'].str.contains('exclude_')]	   
+	
+		df = pd.DataFrame()
+		jmeter_results_file = build_root + "/jmeter.jtl"
+		if not os.path.exists(jmeter_results_file):
+			print "Results file does not exists, try to check archive"
+			jmeter_results_zip = jmeter_results_file + ".zip"
+			if os.path.exists(jmeter_results_zip):
+				print "Archive file was found " + jmeter_results_zip
+				with zipfile.ZipFile(jmeter_results_zip, "r") as z:
+					z.extractall(build_root)
+		print "Executing a new parse: " + jmeter_results_file + " size: "+ str(os.stat(jmeter_results_file).st_size)
+		if os.stat(jmeter_results_file).st_size > 1000007777:
+			chunks = pd.read_table(jmeter_results_file,sep=',',index_col=0,chunksize=5000000);
+			for chunk in chunks:
+				chunk.columns = ['average', 'URL','responseCode','success','threadName','failureMessage','grpThreads','allThreads']
+				chunk=chunk[~chunk['URL'].str.contains('exclude_')]
+				df = df.append(chunk);
+				print "Parsing a huge file,size: " + str(df.size)
+		else:
+			df = pd.read_csv(jmeter_results_file,index_col=0,low_memory=False)
+			df.columns = ['average', 'URL','responseCode','success','threadName','failureMessage','grpThreads','allThreads']
+			df=df[~df['URL'].str.contains('exclude_')]	   
 				
-		
+		df.columns = ['average', 'URL','responseCode','success','threadName','failureMessage','grpThreads','allThreads']
+		#convert timestamps to normal date/time
+		df.index=pd.to_datetime(dateconv((df.index.values/1000)))
 		num_lines = df['average'].count()
 		print "Number of lines in file 1: %d." % num_lines
 		
@@ -195,25 +224,19 @@ for build_root in build_roots:
 		try:
 			byURL = df.groupby('URL') # group date by URLs  
 			agg[file_index] = byURL.aggregate({'average':np.mean}).round(1)
-			#if file_index != 0:
-				#agg[file_index]['average-diff'] = df_.groupby('URL').average.mean().round(1)-df.groupby('URL').average.mean().round(1)
 			agg[file_index]['median'] = byURL.average.median().round(1)
-			#if file_index != 0:
-				#agg[file_index]['median-diff'] = df_.groupby('URL').average.median().round(1)-df.groupby('URL').average.median().round(1)  
 			agg[file_index]['75_percentile'] = byURL.average.quantile(.75).round(1)
 			agg[file_index]['90_percentile'] = byURL.average.quantile(.90).round(1)
 			agg[file_index]['99_percentile'] = byURL.average.quantile(.99).round(1)
 			agg[file_index]['maximum'] = byURL.average.max().round(1)
 			agg[file_index]['minimum'] = byURL.average.min().round(1)
 			agg[file_index]['count'] = byURL.success.count().round(1)
-			#if file_index != 0:
-				#agg[file_index]['count-diff'] = df_.groupby('URL').success.count().round(1)-df.groupby('URL').success.count().round(1)
 			agg[file_index]['%_errors'] = ((1-df[(df.success == True)].groupby('URL')['success'].count()/byURL['success'].count())*100).round(1)
-			#if file_index != 0:
-				#agg[file_index]['%_errors_diff'] = (((1-df_[(df_.success == True)].groupby('URL').success.count()/df_.groupby('URL').success.count())*100)-((1-df[(df.success == True)].groupby('URL').success.count()/df.groupby('URL').success.count())*100)).round(1)
 			
 			print "Trying to save aggregate table to CSV-file: %s." % target_csv
-			agg[file_index].to_csv(target_csv, sep=',')	
+			agg[file_index].to_csv(target_csv, sep=',')
+			agg[file_index] = pd.read_csv(target_csv, header = 0, names=['URL','average','median','75_percentile','90_percentile','99_percentile','maximum','minimum','count','%_errors'])
+			zip_results_file(jmeter_results_file)
 		except ValueError,e:
 			print "error",e
 
@@ -235,14 +258,13 @@ for build_root in build_roots:
 			dfURL = df[(df.URL == URL)]
 			dfURL.groupby(pd.TimeGrouper(freq='10Min')).average.mean().to_csv(PARSED_DATA_ROOT + "average_10_"+URLdist+'.csv', sep=',')
 			dfURL.groupby(pd.TimeGrouper(freq='10Min')).average.median().to_csv(PARSED_DATA_ROOT + "median_10_"+URLdist+'.csv', sep=',')
-			dfURL[(dfURL.success == False)].groupby(pd.TimeGrouper(freq='10Min')).success.count().to_csv(PARSED_DATA_ROOT + "errors_10_"+URLdist+'.csv', sep=',')
-	
+			dfURL[(dfURL.success == False)].groupby(pd.TimeGrouper(freq='10Min')).success.count().to_csv(PARSED_DATA_ROOT + "errors_10_"+URLdist+'.csv', sep=',')		
 		with open(PARSED_DATA_ROOT + 'checksum', 'w') as f:
 			f.write('%d' % get_dir_size(PARSED_DATA_ROOT))		
 		
 	else:
-		print "Using the exist data"
-		agg[file_index] = pd.read_csv(target_csv, index_col=False, header=0)
+		print "Using the exist data from " + target_csv
+		agg[file_index] = pd.read_csv(target_csv, header = 0, names=['URL','average','median','75_percentile','90_percentile','99_percentile','maximum','minimum','count','%_errors'])
 	
 	
 	
@@ -289,13 +311,14 @@ for num in range(0,file_index):
 	if num != 0:
 		df['%_errors_diff'] = agg[0]['%_errors']-df['%_errors']	
 	if num != 0:
-		df = df[['URL','average','average-diff','median','median-diff','75_percentile','90_percentile','99_percentile','maximum','minimum','count','count-diff','%_errors','%_errors_diff']]		
+		df = df[['URL','average','average-diff','median','median-diff','75_percentile','90_percentile','99_percentile','maximum','minimum','count','count-diff','%_errors','%_errors_diff']]
+
+	if num == 0:
+		df.to_csv(target_csv, sep=',', index=False)
+	else:
+		df.to_csv(target_csv, sep=',', index=False)
 	
-	df.to_csv(target_csv, sep=',', index=False)
-	print num
-
 num = 0
-
 
 for build_root in build_roots:
 	uniqueURL = []
@@ -308,7 +331,7 @@ for build_root in build_roots:
 	rownum = 0
 	htmlfile.write('<div class="datagrid" >')
 	htmlfile.write('<table id="Table'+ str(num) +'" class="tablesorter">')
-	#target_csv = PARSED_DATA_ROOT + "aggregate_table.csv"
+#   target_csv = PARSED_DATA_ROOT + "aggregate_table.csv"	
 	target_csv = DATA_DIR + "aggregate_table_" + str(num) + ".csv"
 	reader = csv.reader(open(target_csv))
 	for row in reader: # Read a single row from the CSV file
@@ -477,9 +500,9 @@ for build_root in build_roots:
 	htmlfile.write('<table>')
 	 
 	 
-	average_rtot = pd.read_csv(PARSED_DATA_ROOT + "average_10.csv", index_col=0, header=0,sep=",",names=['time','average'], parse_dates=[0])
-	median_rtot = pd.read_csv(PARSED_DATA_ROOT + "median_10.csv", index_col=0, header=0,sep=",",names=['time','median'],parse_dates=[0])
-	overall_errors = pd.read_csv(PARSED_DATA_ROOT + "overall_errors_10.csv", index_col=0, header=0,sep=",",names=['time','errors'],parse_dates=[0])
+	average_rtot = pd.read_csv(PARSED_DATA_ROOT + "average_10.csv", index_col=0, header=None,sep=",",names=['time','average'], parse_dates=[0])
+	median_rtot = pd.read_csv(PARSED_DATA_ROOT + "median_10.csv", index_col=0, header=None,sep=",",names=['time','median'],parse_dates=[0])
+	overall_errors = pd.read_csv(PARSED_DATA_ROOT + "overall_errors_10.csv", index_col=0,header=None,sep=",",names=['time','errors'],parse_dates=[0])
 	
 	fig = plt.figure()
 	ax = fig.add_subplot(1,1,1)
@@ -499,8 +522,8 @@ for build_root in build_roots:
 	if not overall_errors.empty:
 		fig = plt.figure()
 		ax = fig.add_subplot(1,1,1)
-		ax.plot(overall_errors,marker='.',markersize=10,label="errors")
-		ax.set_xlabel("Test time")		
+		ax.plot(overall_errors.index.values,overall_errors,marker='.',markersize=10,label="errors")
+		ax.set_xlabel("Test time")
 		ax.set_ylabel("Errors count")
 		ax.set_title('Errors over Time')
 		ax.legend()
@@ -513,14 +536,14 @@ for build_root in build_roots:
 	  
 	#response_codes = dataframes[num].groupby("responseCode").average.count()
 	response_codes = pd.read_csv(PARSED_DATA_ROOT + "response_codes.csv",sep=",",names=['code','%'],index_col=0)
-	print response_codes
+
 	if not response_codes.empty:		
 		fig = plt.figure()
+		ax = fig.add_subplot(1,1,1)
 	   # ax.pie(response_codes,autopct='%.2f')
 		response_codes.plot(kind='pie',subplots=True,autopct='%.2f', fontsize=8, figsize=(6, 6),label="response codes")
 		ax.set_xlabel("code")
 		ax.set_title('Response codes')
-		ax.legend()
 		plt.tight_layout()
 		savefig(IMAGES_DIR+'responsecodes_'+str(num) + '.png')
 		plt.cla()
@@ -560,7 +583,7 @@ for build_root in build_roots:
 	   
 	url_count = 0
 	for URL in uniqueURL:
-		print uniqueURL
+		uniqueURL
 		errors_url = []
 		average_rtot_url = []
 		median_rtot_url = []
@@ -573,9 +596,9 @@ for build_root in build_roots:
 		print "Opening CSV-file %s" % PARSED_DATA_ROOT  + "average_10_"+URL +'.csv'	
 		average_rtot_url = pd.read_csv(PARSED_DATA_ROOT + "average_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time','avg'])
 		median_rtot_url = pd.read_csv(PARSED_DATA_ROOT + "median_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time','med'])
-		 
+
 		try:	
-			errors_url = pd.read_csv(PARSED_DATA_ROOT + "errors_10_"+URL+'.csv', index_col=0, header=0,sep=",",parse_dates=[0])
+			errors_url = pd.read_csv(PARSED_DATA_ROOT + "errors_10_"+URL+'.csv', index_col=0,header=None,sep=",",parse_dates=[0])
 		except ValueError,e:
 			print("errors_10_"+URL+'.csv' +' has a zero size')
 			 
@@ -594,10 +617,9 @@ for build_root in build_roots:
 		savefig(IMAGES_DIR+'rtot_'+str(num) + '_'+ URL + '.png')
 		plt.cla() 
 		fig.clear()
+		
 		htmlfile.write("<td>"+'<h3 id="'+URL+str(num)+'">'+URL+'</h3>'+'<img src="'+"images/"+'rtot_'+str(num) + '_'+ URL + '.png'+'"></td>')
 		if len(errors_url)!=0:
-			 
-			print errors_url
 			errors_url=errors_url.astype(float)
 			fig = plt.figure()
 			ax = errors_url.plot(title='Errors s over Time for '  + str(URL) , label="errors")
