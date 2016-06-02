@@ -131,10 +131,13 @@ htmlfile.write("""<!DOCTYPE html>
 <link rel="stylesheet" type="text/css" href="./resourses/main.css">
 <link rel="stylesheet" type="text/css" href="./resourses/blue/style.css">
 <link rel="stylesheet" type="text/css" href="./resourses/jquery-ui.css">
+<link rel="stylesheet" type="text/css" href="./resourses/c3.css">
 <script src='./resourses/jquery-1.11.3.min.js'></script>
 <script src='./resourses/jquery-ui.js'></script>
 <script src='./resourses/jquery.elevatezoom.js'></script>
 <script src='./resourses/jquery.tablesorter.js'></script>
+<script src='./resourses/d3.js'></script>
+<script src='./resourses/c3.js'></script>
 <script>
   $(function() {
 	$( "#tabs" ).tabs().addClass('tabs-left');
@@ -157,10 +160,19 @@ htmlfile.write("""<!DOCTYPE html>
 	}
 		
 	} 
-   ); 
+   );
+ document.onreadystatechange = function () {
+  var state = document.readyState
+  if (state == 'complete') {
+         document.getElementById('interactive');
+         document.getElementById('load').style.visibility="hidden";
+  }
+}
+
+  
 </script>
 </head>
-<body>""")
+<body><div id="load"></div>""")
 agg = {}
 mon = {}
 
@@ -203,6 +215,7 @@ for build_root in build_roots:
 					z.extractall(build_root)
 		print "Executing a new parse: " + jmeter_results_file + " size: "+ str(os.stat(jmeter_results_file).st_size)
 		if os.stat(jmeter_results_file).st_size > 1000007777:
+			print "Executing a parse for a huge file"
 			chunks = pd.read_table(jmeter_results_file,sep=',',index_col=0,chunksize=5000000);
 			for chunk in chunks:
 				chunk.columns = ['average', 'URL','responseCode','success','threadName','failureMessage','grpThreads','allThreads']
@@ -246,7 +259,7 @@ for build_root in build_roots:
 		df.groupby(pd.TimeGrouper(freq='10Min')).average.median().to_csv(PARSED_DATA_ROOT + "median_10.csv", sep=',')  
 		df[(df.success == False)].groupby(pd.TimeGrouper(freq='10Min')).success.count().to_csv(PARSED_DATA_ROOT + "overall_errors_10.csv", sep=',')  
 		df.groupby("responseCode").average.count().to_csv(PARSED_DATA_ROOT + "response_codes.csv", sep=',')  
-		
+		df.groupby("success").average.count().to_csv(PARSED_DATA_ROOT + "errors_rate.csv", sep=',') 
 
 		
 		dfURL={}
@@ -319,7 +332,7 @@ for num in range(0,file_index):
 		df.to_csv(target_csv, sep=',', index=False)
 	
 num = 0
-
+GRAPHS = ""
 for build_root in build_roots:
 	uniqueURL = []
 	PARSED_DATA_ROOT = build_root + "/parsed_data/"
@@ -504,140 +517,296 @@ for build_root in build_roots:
 	median_rtot = pd.read_csv(PARSED_DATA_ROOT + "median_10.csv", index_col=0, header=None,sep=",",names=['time','median'],parse_dates=[0])
 	overall_errors = pd.read_csv(PARSED_DATA_ROOT + "overall_errors_10.csv", index_col=0,header=None,sep=",",names=['time','errors'],parse_dates=[0])
 	
-	fig = plt.figure()
-	ax = fig.add_subplot(1,1,1)
-	ax.plot(average_rtot.index.values,average_rtot,marker='.',markersize=10,label="average")
-	ax.plot(median_rtot.index.values,median_rtot,marker='.',markersize=10, label="median")
-	ax.set_title('Response Times over Time')
-	ax.set_xlabel("Test time")
-	ax.set_ylabel("Response time (ms)")
-	ax.legend()
-	plt.tight_layout()
-	savefig(IMAGES_DIR+'rtot_'+str(num) + '.png')  
-	plt.cla()
-	fig.clear()
- 
-	 
-	 
-	if not overall_errors.empty:
-		fig = plt.figure()
-		ax = fig.add_subplot(1,1,1)
-		ax.plot(overall_errors.index.values,overall_errors,marker='.',markersize=10,label="errors")
-		ax.set_xlabel("Test time")
-		ax.set_ylabel("Errors count")
-		ax.set_title('Errors over Time')
-		ax.legend()
-		plt.tight_layout()
-		savefig(IMAGES_DIR+'errors_'+str(num) + '.png')
-		plt.cla()
-		fig.clear()
-  
-  
-	  
-	#response_codes = dataframes[num].groupby("responseCode").average.count()
-	response_codes = pd.read_csv(PARSED_DATA_ROOT + "response_codes.csv",sep=",",names=['code','%'],index_col=0)
-
-	if not response_codes.empty:		
-		fig = plt.figure()
-		ax = fig.add_subplot(1,1,1)
-	   # ax.pie(response_codes,autopct='%.2f')
-		response_codes.plot(kind='pie',subplots=True,autopct='%.2f', fontsize=8, figsize=(6, 6),label="response codes")
-		ax.set_xlabel("code")
-		ax.set_title('Response codes')
-		plt.tight_layout()
-		savefig(IMAGES_DIR+'responsecodes_'+str(num) + '.png')
-		plt.cla()
-		fig.clear()
-   
+	overall_rtot = pd.merge(average_rtot, median_rtot, how='outer', left_index=True, right_index=True)
+	overall_rtot.to_csv(DATA_DIR + "overall_rtot_"+str(num)+".csv",float_format='%.1f')
+	overall_errors.to_csv(DATA_DIR + "overall_errors_"+str(num)+".csv",float_format='%.1f')
+	
+	response_codes = pd.read_csv(PARSED_DATA_ROOT + "response_codes.csv",sep=",",header=None,index_col = 0)		
+	response_codes.transpose().to_csv(DATA_DIR + "response_codes_"+str(num)+".csv",index=False)
+	errors_rate = pd.read_csv(PARSED_DATA_ROOT + "errors_rate.csv",sep=",",header=None,index_col = 0)
+	errors_rate.transpose().to_csv(DATA_DIR + "errors_rate_"+str(num)+".csv",index=False)	
   
 	
-	agg[num][['average']].plot(kind='barh')
-	 
-	fig = plt.figure()
-	savefig(IMAGES_DIR+'bar_small_'+str(num) + '.png')
-	fig.set_size_inches(20.5, 10.5)
-	savefig(IMAGES_DIR+'bar_'+str(num) + '.png', dpi=300)
-	plt.cla()
-	fig.clear()
+	agg[num][['URL','average']].to_csv(DATA_DIR + "horizontal_"+str(num)+".csv",float_format='%.1f',index=False)
+	
 	  
 	htmlfile.write('<table>')
 	htmlfile.write('<thead><tr><div id="overallgraphs'+str(num)+'"><th colspan="2">Overall test graphs:</th></div></tr></thead>') 
-	htmlfile.write("<tr>")
-	htmlfile.write("<td><img src='images/rtot_"+str(num) + ".png'></td>")
-	htmlfile.write("<td><img id='zoom_01' src='images/bar_small_"+str(num) + ".png' data-zoom-image='images/bar_"+str(num) + ".png'/></td>")
-	htmlfile.write("</tr>")
-	htmlfile.write("<tr>")
-	htmlfile.write("<td><img src='images/errors_"+str(num) + ".png'></td>")
-	htmlfile.write("<td><img src='images/responsecodes_"+str(num) + ".png'></td>")
-	htmlfile.write("</tr>")
+	htmlfile.write('<tr>')
+	htmlfile.write('<td><div id="overall_rtot'+str(num)+'"></div></td>')
+	#htmlfile.write('<td><div id="errors_rate'+str(num)+'"></div></td>')
+	htmlfile.write('</tr>')
+	htmlfile.write('<tr>')
+	htmlfile.write('<td><div id="overall_errors'+str(num)+'"></div></td>')
+	#htmlfile.write('<td><div id="response_codes'+str(num)+'"></div></td>')
+	htmlfile.write('</tr>')
+	#htmlfile.write('<tr>')
+	#htmlfile.write('<th colspan="2"><div id="horizontal'+str(num)+'"></th>')
+	#htmlfile.write('</tr>')
 	htmlfile.write('<table>')
-	 
+	# GRAPHS = GRAPHS + """var response_codes""" + str(num)+ """= c3.generate({
+# size: {
+		# height: 500,
+		# width:500
+		# },
+	# data: {
+		# url: './data/response_codes_""" + str(num)+ """.csv',
+		# type : 'donut',
+		# onclick: function(e) {
+        # //console.log(e);
+        # // console.log(d3.select(this).attr("stroke-width","red"));
+      # },
+      # onmouseover: function(d, i) {
+		  
+      # },
+      # onmouseout: function(d, i) {
+
+      # }
+		# },
+	# title: {
+	  # text: 'Response codes on the last test'
+	# },bindto: '#response_codes""" + str(num)+ """'
+	# });""";
+	# GRAPHS = GRAPHS + """var errors_rate""" + str(num)+ """= c3.generate({
+# size: {
+		# height: 500,
+		# width:500
+		# },
+	# data: {
+		# url: './data/errors_rate_""" + str(num)+ """.csv',
+		# type : 'donut',
+		# colors: {
+            # 'False': '#ff0000',
+            # 'True': '#00ff00',
+        # },
+		# onclick: function(e) {
+        # //console.log(e);
+        # // console.log(d3.select(this).attr("stroke-width","red"));
+      # },
+      # onmouseover: function(d, i) {
+		  
+      # },
+      # onmouseout: function(d, i) {
+
+      # }
+		# },
+	# title: {
+	  # text: 'Errors percentage (%)'
+	# },bindto: '#errors_rate""" + str(num)+ """'
+	# });""";
+	GRAPHS = GRAPHS + """
+		var overall_rtot""" + str(num)+ """= c3.generate({
+size: {
+		height: 700,
+		width:1400
+		},
+	data: {
+		url: './data/overall_rtot_"""+str(num)+""".csv',
+		x:'time',
+		xFormat: '%Y-%m-%d %H:%M:%S',
+		},
+	axis: {
+		x: {
+			type: 'timeseries',
+			tick: {
+				format: '%Y-%d-%m %H:%M'
+			}
+		},
+		y: {
+			padding: {top:0, bottom:0},
+			label: 'response times (ms)',		
+		}
+		
+		}
+	,
+	title: {
+	  text: 'Average und median response times (ms) during a test'
+	},bindto: '#overall_rtot"""+ str(num)+"""'
+	});""";
+	GRAPHS = GRAPHS + """
+		var overall_errors""" + str(num)+ """= c3.generate({
+size: {
+		height: 700,
+		width:1400
+		},
+	data: {
+		url: './data/overall_errors_"""+str(num)+""".csv',
+		x:'time',
+		xFormat: '%Y-%m-%d %H:%M:%S',
+		},
+	axis: {
+		x: {
+			type: 'timeseries',
+			tick: {
+				format: '%Y-%d-%m %H:%M'
+			}
+		},
+		y: {
+			padding: {top:0, bottom:0},
+			label: 'errors',		
+		}
+		
+		}
+	,
+	title: {
+	  text: 'Number of errors per 10 min during a test'
+	},bindto: '#overall_errors"""+ str(num)+"""'
+	});""";
+
+	# GRAPHS = GRAPHS + """var horizontal""" + str(num)+ """ = c3.generate({
+    # bindto: '#horizontal""" + str(num)+ """',
+	# size: {
+		# height: 700,
+		# width:1400
+		# },
+    # data: {
+        # url: './data/horizontal_0.csv',            // specify that our above json is the data       
+		# x: 'URL',         // specify that the "name" key is the x value
+        # type: 'bar'            // specfify type of plot
+    # },
+	
+	# bar: {
+		# width: {
+			# ratio: 0.8 // this makes bar width 50% of length between ticks
+		# }
+		# // or
+		# //width: 100 // this makes bar width 100px
+	# },
+    # axis: {
+        # rotated: true,         // horizontal bar chart
+        # x: {
+            # type: 'category'   // this needed to load string x value
+        # },
+		# y: {
+			# padding: {top:0, bottom:0},
+			# label: 'response time (ms)',		
+		# }
+    # }
+# });""";
 	 
 	dfURL={}
 
 	
 	
 	   
-	htmlfile.write('<table>')
-	htmlfile.write('<thead><tr><div id="actiongraphs'+str(num)+'"><th colspan="2">Action graphs:</th></div></tr></thead>') 
-	   
-	url_count = 0
+	htmlfile.write('<table style="width:100%">')
+	htmlfile.write('<thead><tr><div id="actiongraphs'+str(num)+'"><th colspan="1">Action graphs:</th></div></tr></thead>') 
+	all_url_avg_df = pd.DataFrame()
+	all_url_med_df = pd.DataFrame()
+	all_url_err_df = pd.DataFrame()
+	print "Build dataframes data:"+PARSED_DATA_ROOT
 	for URL in uniqueURL:
-		uniqueURL
-		errors_url = []
-		average_rtot_url = []
-		median_rtot_url = []
+		errors_url = pd.DataFrame()
+		average_rtot_url = pd.DataFrame()
+		median_rtot_url = pd.DataFrame()
 		print "Generating graphs for %s" % URL
-		if url_count%2 == 0:
-			htmlfile.write('<tr class="alt">')
-		else:
-			htmlfile.write('<tr>')
 		URL=URL.replace("?", "_").replace("/","_").replace('"',"_")
-		print "Opening CSV-file %s" % PARSED_DATA_ROOT  + "average_10_"+URL +'.csv'	
-		average_rtot_url = pd.read_csv(PARSED_DATA_ROOT + "average_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time','avg'])
-		median_rtot_url = pd.read_csv(PARSED_DATA_ROOT + "median_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time','med'])
-
+		average_rtot_url = pd.read_csv(PARSED_DATA_ROOT + "average_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time',URL+'_avg'])
+		median_rtot_url = pd.read_csv(PARSED_DATA_ROOT + "median_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time',URL+'_med'])
+		all_url_avg_df = pd.merge(all_url_avg_df, average_rtot_url, how='outer', left_index=True, right_index=True)
+		all_url_med_df = pd.merge(all_url_med_df, median_rtot_url, how='outer', left_index=True, right_index=True)		
 		try:	
-			errors_url = pd.read_csv(PARSED_DATA_ROOT + "errors_10_"+URL+'.csv', index_col=0,header=None,sep=",",parse_dates=[0])
+			errors_url = pd.read_csv(PARSED_DATA_ROOT + "errors_10_"+URL+'.csv', index_col=0,sep=",",parse_dates=[0],names=['time',URL+'_err'])
+			all_url_err_df = pd.merge(all_url_err_df, errors_url, how='outer', left_index=True, right_index=True)
 		except ValueError,e:
 			print("errors_10_"+URL+'.csv' +' has a zero size')
-			 
-		#p95_rtot = df.groupby(pd.TimeGrouper(freq='10Min')).average.quantile(.95)
-		fig = plt.figure()
-		ax = fig.add_subplot(1,1,1)
-		ax.clear()
-		
-		ax.plot(average_rtot_url.index.values,average_rtot_url,marker='.',markersize=10,label="average")
-		ax.plot(median_rtot_url.index.values,median_rtot_url,marker='.',markersize=10, label="median")
-		ax.set_title('Response Times over Time for ' + str(URL))
-		ax.set_xlabel("Test time")
-		ax.set_ylabel("Response time (ms)")
-		ax.legend()
-		plt.tight_layout()
-		savefig(IMAGES_DIR+'rtot_'+str(num) + '_'+ URL + '.png')
-		plt.cla() 
-		fig.clear()
-		
-		htmlfile.write("<td>"+'<h3 id="'+URL+str(num)+'">'+URL+'</h3>'+'<img src="'+"images/"+'rtot_'+str(num) + '_'+ URL + '.png'+'"></td>')
-		if len(errors_url)!=0:
-			errors_url=errors_url.astype(float)
-			fig = plt.figure()
-			ax = errors_url.plot(title='Errors s over Time for '  + str(URL) , label="errors")
-			ax.set_xlabel("Test time")
-			ax.set_ylabel("Errors")
-			ax.legend()
-			plt.tight_layout()
-			URL=URL.replace("?", "_").replace("/","_") 
-			savefig(IMAGES_DIR+ 'errors_'+ URL + '.png')
-			plt.cla() 
-			fig.clear()
-			htmlfile.write("<td><img src='"+"images/"+ 'errors_'+ URL + '.png'+"'></td>")
-		htmlfile.write("</tr>")
-		url_count+=1
-	   
-	   
+	all_url_avg_df.to_csv(DATA_DIR + "RTOTs_"+str(num)+".csv",float_format='%.1f')
+	all_url_med_df.to_csv(DATA_DIR + "MEDIANs_"+str(num)+".csv",float_format='%.1f')
+	all_url_err_df.to_csv(DATA_DIR + "ERRORs_"+str(num)+".csv",float_format='%.1f')
+	htmlfile.write('<tr><td><div id="rtot'+str(num)+'"></div></td></tr>"')
+	htmlfile.write('<tr><td><div id="median'+str(num)+'"></div></td></tr>')
+	htmlfile.write('<tr><td><div id="error'+str(num)+'"></div></td></tr>')
 	htmlfile.write('</table>')
    
+	GRAPHS = GRAPHS + """
+		var rtot""" + str(num)+ """= c3.generate({
+size: {
+		height: 700,
+		width:1400
+		},
+	data: {
+		url: './data/RTOTs_"""+str(num)+""".csv',
+		x:'time',
+		xFormat: '%Y-%m-%d %H:%M:%S',
+		},
+	axis: {
+		x: {
+			type: 'timeseries',
+			tick: {
+				format: '%Y-%d-%m %H:%M'
+			}
+		},
+		y: {
+			padding: {top:0, bottom:0},
+			label: 'response times (ms)',		
+		}
+		
+		}
+	,
+	title: {
+	  text: 'Average response times (ms) for all actions'
+	},bindto: '#rtot"""+ str(num)+"""'
+	});""";
+	GRAPHS = GRAPHS + """
+		var median""" + str(num)+ """= c3.generate({
+size: {
+		height: 700,
+		width:1400
+		},
+	data: {
+		url: './data/MEDIANs_"""+str(num)+""".csv',
+		x:'time',
+		xFormat: '%Y-%m-%d %H:%M:%S',
+		},
+	axis: {
+		x: {
+			type: 'timeseries',
+			tick: {
+				format: '%Y-%d-%m %H:%M'
+			}
+		},
+		y: {
+			padding: {top:0, bottom:0},
+			label: 'response times (ms)',		
+		}
+		
+		}
+	,
+	title: {
+	  text: 'Median response times (ms) for all actions'
+	},bindto: '#median"""+ str(num)+"""'
+	});""";
+	GRAPHS = GRAPHS + """
+		var error""" + str(num)+ """= c3.generate({
+size: {
+		height: 700,
+		width:1400
+		},
+	data: {
+		url: './data/ERRORs_"""+str(num)+""".csv',
+		x:'time',
+		xFormat: '%Y-%m-%d %H:%M:%S',
+		},
+	axis: {
+		x: {
+			type: 'timeseries',
+			tick: {
+				format: '%Y-%d-%m %H:%M'
+			}
+		},
+		y: {
+			padding: {top:0, bottom:0},
+			label: 'errors',		
+		}
+		
+		}
+	,
+	title: {
+	  text: 'Error for all actions'
+	},bindto: '#error"""+ str(num)+"""'
+	});""";
+	   
+
 	htmlfile.write('</div>')
 	htmlfile.write('</div>')
 	num = num + 1
@@ -652,6 +821,7 @@ font = {'family' : 'sans-serif',
 aopd = pd.DataFrame(rtot_over_releases, columns=['Release','Average', 'Median'])
 aopd = aopd.set_index(['Release'])
 aopd = aopd[::-1] #reverse
+aopd.to_csv(DATA_DIR+ "RTOT_compare.csv",float_format='%.1f')
 ax = aopd.plot(marker='.',markersize=10,title='Average Response Times through all releases',label="average")
 ax.set_xlabel("Releases")
 ax.set_ylabel("Response time (ms)")
@@ -664,7 +834,7 @@ htmlfile.write('<div class="scrollit">')
  
 htmlfile.write(aopd.to_html(classes='table',escape=False,float_format=lambda x: '%10.1f' % x))
 htmlfile.write('</div>')
-htmlfile.write("<img src='"+"images/rtot_over_releases.png"+"'>")
+#htmlfile.write("<img src='"+"images/rtot_over_releases.png"+"'>")
 htmlfile.write("</td>")
 cpu_frames = []
 for s in cpu_over_releases:
@@ -675,13 +845,15 @@ for s in cpu_over_releases:
 	cpu_frames.append(x)
  
 result = pd.concat(cpu_frames)
+
 result = result[::-1]
- 
+result.to_csv(DATA_DIR+ "CPU_compare.csv",float_format='%.1f')
 cpu_html_table = result.to_html(classes='table',escape=False,float_format=lambda x: '%10.1f' % x)
  
 print cpu_html_table
  
- 
+m = pd.merge(aopd, result, how='inner', left_index=True, right_index=True)
+m.to_csv(DATA_DIR+ "compare.csv",float_format='%.1f')  
  
 ax = result.plot(kind='bar',title='Average CPU load on servers through all releases',label="average")
 ax.set_xlabel("Releases")
@@ -696,17 +868,32 @@ htmlfile.write("<td>")
 htmlfile.write('<div class="scrollit">')
 htmlfile.write(cpu_html_table)
 htmlfile.write('</div>')
-htmlfile.write("<img src='"+"images/cpu_over_releases.png"+"'>")
+#htmlfile.write("<img src='"+"images/cpu_over_releases.png"+"'>")
 htmlfile.write("</td>")
 htmlfile.write('</div>')
 htmlfile.write('</div>')
-   
-   
-   
-   
-htmlfile.write(""" 
-</div>
-	""")
+htmlfile.write('<div class="datagrid" >')   
+htmlfile.write("""<table style="width:100%">
+  <tr>
+  <th colspan="3"><p style="text-align:center;"><span style="font-family:Cursive;font-size:14px;font-style:normal;font-weight:bold;text-decoration:none;text-transform:none;color:006600;">Data for the last test</span>
+</p></th>
+  </tr>
+  <tr>   
+	<th align="center"><div id="errors_rate_last"></div></th>
+	<th rowspan="2" align="center"><div id="horizontal_last"></div></th>
+  </tr>
+  <tr>
+  <td align="center"><div id="response_codes_last"></div></td>
+  </tr>
+  <tr>
+  <th colspan="3"><p style="text-align:center;"><span style="font-family:Cursive;font-size:14px;font-style:normal;font-weight:bold;text-decoration:none;text-transform:none;color:006600;">Data for the all tests</span>
+</p></th>
+  </tr>
+  <tr>
+  <th colspan="3"><div id="chart"></div></th>
+  </tr>
+</table>""")   
+htmlfile.write('</div>')  
 htmlfile.write("""
 <script>
 	$('#zoom_01').elevateZoom({
@@ -717,5 +904,184 @@ zoomWindowFadeOut: 750
    }); 
 </script>
 """)
-
+htmlfile.write('<script src="./resourses/d3.js"></script>')
+htmlfile.write('<script src="./resourses/c3.js"></script>')
+htmlfile.write('<script src="graphs.js"></script>')
 htmlfile.write('</body>')
+
+f2 = open(report_dir+"/graphs.js", 'w')
+
+f2.write("""var response_codes_last= c3.generate({
+size: {
+		height: 400,
+		width:	350
+		},
+	data: {
+		url: './data/response_codes_0.csv',
+		type : 'donut',
+		onclick: function(e) {
+        //console.log(e);
+        // console.log(d3.select(this).attr("stroke-width","red"));
+      },
+      onmouseover: function(d, i) {
+		  
+      },
+      onmouseout: function(d, i) {
+
+      }
+		},
+	title: {
+	  text: 'Response codes statistic from the last test'
+	},bindto: '#response_codes_last'
+	});""")
+
+GRAPHS = GRAPHS + """var errors_rate_last= c3.generate({
+size: {
+		height: 400,
+		width:	350
+		},
+	data: {
+		url: './data/errors_rate_0.csv',
+		type : 'donut',
+		colors: {
+            'False': '#ff0000',
+            'True': '#00ff00',
+        },
+		onclick: function(e) {
+        //console.log(e);
+        // console.log(d3.select(this).attr("stroke-width","red"));
+      },
+      onmouseover: function(d, i) {
+		  
+      },
+      onmouseout: function(d, i) {
+
+      }
+		},
+	title: {
+	  text: 'Errors percentage (%)'
+	},bindto: '#errors_rate_last'
+	});""";	
+	
+f2.write("""var horizontal_last = c3.generate({
+    bindto: '#horizontal_last',
+	size: {
+		height: 900,
+		width:1000
+		},
+    data: {
+        url: './data/horizontal_0.csv',            // specify that our above json is the data       
+		x: 'URL',         // specify that the "name" key is the x value
+        type: 'bar'            // specfify type of plot
+    },
+	
+	bar: {
+		width: {
+			ratio: 0.8 // this makes bar width 50% of length between ticks
+		}
+		// or
+		//width: 100 // this makes bar width 100px
+	},
+    axis: {
+        rotated: true,         // horizontal bar chart
+        x: {
+            type: 'category'   // this needed to load string x value
+        },
+		y: {
+			padding: {top:0, bottom:0},
+			label: 'response time (ms)',		
+		}
+    },
+		zoom: {
+		enabled: true
+	},
+	title: {
+	  text: 'Actions response times from the last test'
+	},
+});""");
+	
+f2.write("""var chart = c3.generate({
+size: {
+		height: 700,
+		},
+	data: {
+		url: './data/compare.csv',
+		filter: function (d) {
+				return (d.id !== 'Average' && d.id !== 'Median');
+			},
+		x : 'Release',
+		type: 'bar',
+		labels: true,
+		names: "cpu",
+		axes: {
+			Average: 'y2',
+			Median: 'y2'
+		}
+		
+	},
+	legend: {
+		show: true,
+		position: 'inset',
+		inset: {
+			anchor: 'top-right',
+			x:undefined,
+			y: undefined,
+			step: undefined
+		}
+	},
+	bar: {
+		width: {
+			ratio: 0.8 // this makes bar width 50% of length between ticks
+		}
+		// or
+		//width: 100 // this makes bar width 100px
+	},
+	axis: {
+		x: {
+			type: 'category',
+			tick: {
+				rotate: 90,
+				multiline: false
+			}
+		},
+		y: {
+			max: 100,
+			min: 0,
+			padding: {top:0, bottom:0},
+			label: 'CPU load (%)',		
+		},
+		y2: {
+			show: true,
+			label: { // ADD
+			text: 'Response time (ms)',
+			max: 100,
+			min: 0,
+			 
+			
+		}
+		}
+	},
+	title: {
+  text: 'Average response times (ms) and CPU load (%) on servers through all releases'
+}
+});
+setTimeout(function () {
+	chart.load({
+
+		url: './data/compare.csv',
+				filter: function (d) {
+				return (d.id === 'Average' || d.id === 'Median');
+			}	,
+		type: 'line',
+	
+	});
+}, 1000);""")
+
+
+
+
+
+
+
+f2.write(GRAPHS)
+f2.close()
