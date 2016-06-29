@@ -52,7 +52,7 @@ def zip_results_file(file):
 	print "File was packed, original file was deleted"
 
 jtl_files = []
-releases = []
+
 
 builds_dir=sys.argv[1]
 report_dir=sys.argv[2]
@@ -94,8 +94,6 @@ for root, dirs, files in os.walk(builds_dir):
 			  
 jtl_files = sorted(jtl_files, key=getIndex,reverse=True)
 
-
-releases.sort();
 
   
 dateconv = np.vectorize(datetime.datetime.fromtimestamp)
@@ -248,7 +246,7 @@ for build_root in build_roots:
 			
 			print "Trying to save aggregate table to CSV-file: %s." % target_csv
 			agg[file_index].to_csv(target_csv, sep=',')
-			agg[file_index] = pd.read_csv(target_csv, header = 0, names=['URL','average','median','75_percentile','90_percentile','99_percentile','maximum','minimum','count','%_errors'])
+			agg[file_index] = pd.read_csv(target_csv, header = 0, names=['URL','average','median','75_percentile','90_percentile','99_percentile','maximum','minimum','count','%_errors'],index_col=0)
 			zip_results_file(jmeter_results_file)
 		except ValueError,e:
 			print "error",e
@@ -277,7 +275,7 @@ for build_root in build_roots:
 		
 	else:
 		print "Using the exist data from " + target_csv
-		agg[file_index] = pd.read_csv(target_csv, header = 0, names=['URL','average','median','75_percentile','90_percentile','99_percentile','maximum','minimum','count','%_errors'])
+		agg[file_index] = pd.read_csv(target_csv, header = 0, names=['URL','average','median','75_percentile','90_percentile','99_percentile','maximum','minimum','count','%_errors'],index_col=0)
 	
 	
 	
@@ -324,12 +322,12 @@ for num in range(0,file_index):
 	if num != 0:
 		df['%_errors_diff'] = agg[0]['%_errors']-df['%_errors']	
 	if num != 0:
-		df = df[['URL','average','average-diff','median','median-diff','75_percentile','90_percentile','99_percentile','maximum','minimum','count','count-diff','%_errors','%_errors_diff']]
+		df = df[['average','average-diff','median','median-diff','75_percentile','90_percentile','99_percentile','maximum','minimum','count','count-diff','%_errors','%_errors_diff']]
 
 	if num == 0:
-		df.to_csv(target_csv, sep=',', index=False)
+		df.to_csv(target_csv, sep=',')
 	else:
-		df.to_csv(target_csv, sep=',', index=False)
+		df.to_csv(target_csv, sep=',')
 	
 num = 0
 GRAPHS = ""
@@ -527,7 +525,7 @@ for build_root in build_roots:
 	errors_rate.transpose().to_csv(DATA_DIR + "errors_rate_"+str(num)+".csv",index=False)	
   
 	
-	agg[num][['URL','average']].to_csv(DATA_DIR + "horizontal_"+str(num)+".csv",float_format='%.1f',index=False)
+	agg[num][['average']].to_csv(DATA_DIR + "horizontal_"+str(num)+".csv",float_format='%.1f')
 	
 	  
 	htmlfile.write('<table>')
