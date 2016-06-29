@@ -777,6 +777,7 @@ button.ui-button::-moz-focus-inner {
 .ui-tabs {
 	position: relative;/* position: relative prevents IE scroll bug (element with position: relative inside container with overflow: auto appear as "fixed") */
 	padding: .2em;
+	
 }
 .ui-tabs .ui-tabs-nav {
 	margin: 0;
@@ -852,8 +853,8 @@ body .ui-tooltip {
 	color: #333333;
 }
 .ui-widget-header {
-	border: 1px solid #e78f08;
-	background: #f6a828 url("images/ui-bg_gloss-wave_35_f6a828_500x100.png") 50% 50% repeat-x;
+	border: 1px solid #0B5C0A;
+	background: #3E6B1C url("images/ui-bg_gloss-wave_35_f6a828_500x100.png") 50% 50% repeat-x;
 	color: #ffffff;
 	font-weight: bold;
 }
@@ -866,15 +867,15 @@ body .ui-tooltip {
 .ui-state-default,
 .ui-widget-content .ui-state-default,
 .ui-widget-header .ui-state-default {
-	border: 1px solid #cccccc;
-	background: #f6f6f6 url("images/ui-bg_glass_100_f6f6f6_1x400.png") 50% 50% repeat-x;
+	border: 1px solid #00730E;
+	background: #DFFFDE url("images/ui-bg_glass_100_f6f6f6_1x400.png") 50% 50% repeat-x;
 	font-weight: bold;
-	color: #1c94c4;
+	color: #000000;
 }
 .ui-state-default a,
 .ui-state-default a:link,
 .ui-state-default a:visited {
-	color: #1c94c4;
+	color: #000000;
 	text-decoration: none;
 }
 .ui-state-hover,
@@ -905,12 +906,12 @@ body .ui-tooltip {
 	border: 1px solid #fbd850;
 	background: #ffffff url("images/ui-bg_glass_65_ffffff_1x400.png") 50% 50% repeat-x;
 	font-weight: bold;
-	color: #eb8f00;
+	color: #000000;
 }
 .ui-state-active a,
 .ui-state-active a:link,
 .ui-state-active a:visited {
-	color: #eb8f00;
+	color: #00730E;
 	text-decoration: none;
 }
 
@@ -1222,4 +1223,43 @@ body .ui-tooltip {
 	opacity: .2;
 	filter: Alpha(Opacity=20); /* support: IE8 */
 	border-radius: 5px;
+}
+.tabs-left { 
+    position: relative; 
+    padding-left: 8.5em;	
+} 
+.tabs-left .ui-tabs-nav { 
+    position: absolute; 
+    left: 0.25em; 
+    top: 0.25em; 
+    bottom: 0.25em;  
+    padding: 0.2em 0 0.2em 0.2em;
+	width:8.5em;
+} 
+.tabs-left .ui-tabs-nav li { 
+    
+    width: 100%;
+	right:1px;	
+    border-right: none; 
+    border-bottom-width: 1px !important; 
+    -moz-border-radius: 4px 0px 0px 4px; 
+    -webkit-border-radius: 4px 0px 0px 4px; 
+    border-radius: 4px 0px 0px 4px; 
+    overflow: hidden; 
+	font-size: 12px;
+	text-align: left;
+} 
+.tabs-left .ui-tabs-nav li.ui-tabs-selected, 
+.tabs-left .ui-tabs-nav li.ui-state-active { 
+    border-right: 1px solid transparent; 
+} 
+.tabs-left .ui-tabs-nav li a { 
+    float: right; 
+    width: 100%; 
+
+	text-align: left;	
+} 
+.tabs-left .ui-tabs-panel { 
+    height: 100em; 
+	text-align: left;
 }
